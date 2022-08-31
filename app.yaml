@@ -1,0 +1,39 @@
+service: metabase
+runtime: custom
+env: flex
+
+automatic_scaling:
+  min_num_instances: 1 # default: 2 for high availability
+  max_num_instances: 2 # default: 20 (limited to avoid crazy autoscaling due to CPU spikes)
+
+resources:
+  cpu: 1
+  memory_gb: 2
+  disk_size_gb: 10
+
+liveness_check:
+  path: /api/health
+  timeout_sec: 1 # default: 4 seconds, min: 1 second
+  check_interval_sec: 5 # default: 30 seconds, min: 1, max: 300
+  failure_threshold: 3 # default: 4 checks, min: 1, max: 10
+  initial_delay_sec: 300 # default: 300 seconds, min: 0, max: 3600
+
+# https://discourse.metabase.com/t/problem-deploying-metabase-with-google-app-engine/11811/7
+readiness_check:
+  path: /api/health
+  timeout_sec: 1 # default: 4 seconds, min: 1 second
+  check_interval_sec: 5 # default: 5 seconds
+  failure_threshold: 2 # default: 2 checks
+  success_threshold: 2 # default: 2 checks
+  app_start_timeout_sec: 300 # default: 300 seconds
+
+env_variables:
+  MB_DB_TYPE: postgres
+  MB_DB_DBNAME: metabase
+  MB_DB_HOST: 127.0.0.1
+  MB_DB_PORT: 5432
+  MB_PORT: 8080
+  MB_JETTY_PORT: 8080
+  # https://github.com/metabase/metabase/issues/12549#issuecomment-633615694
+  # Might fix pulses failing to render and send using Google App Engine
+  JAVA_OPTS: "-XX:+IgnoreUnrecognizedVMOptions -Dfile.encoding=UTF-8 --add-opens=java.base/java.net=ALL-UNNAMED --add-modules=java.xml.bind -Djava.awt.headless=true -Djavax.accessibility.assistive_technologies=java.lang.Object"

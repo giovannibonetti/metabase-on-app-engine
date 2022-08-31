@@ -1,0 +1,73 @@
+steps:
+- id: docker-pull-previous-image
+  name: gcr.io/cloud-builders/docker
+  args: ['pull', 'gcr.io/$PROJECT_ID/metabase']
+
+- id: load-secret-env-vars
+  name: gcr.io/cloud-builders/gcloud
+  entrypoint: bash
+  args:
+    - -c
+    - |
+      gcloud secrets versions access latest --secret=metabase > .env
+
+- id: docker-build-current-image
+  name: gcr.io/cloud-builders/docker
+  args:
+    - build
+    - .
+    - --cache-from=gcr.io/$PROJECT_ID/metabase
+    - --tag=gcr.io/$PROJECT_ID/metabase:$SHORT_SHA
+    - --tag=gcr.io/$PROJECT_ID/metabase:latest
+    - --tag=us-east1-docker.pkg.dev/$PROJECT_ID/metabase/metabase:$SHORT_SHA
+    - --tag=us-east1-docker.pkg.dev/$PROJECT_ID/metabase/metabase:latest
+
+# Google Container Registry (gcr.io) is located close to Cloud Build (North America)
+# Push to Container Registry, which is in the same region as Cloud Build
+- id: docker-push-current-image-to-container-registry
+  waitFor: ['docker-build-current-image']
+  name: gcr.io/cloud-builders/docker
+  entrypoint: bash
+  args:
+    - -c
+    - |
+      docker push gcr.io/$PROJECT_ID/metabase:$SHORT_SHA &&
+      docker push gcr.io/$PROJECT_ID/metabase:latest
+
+# Artifact Registry (gcr.io) is located close to our App Engine project
+# Push to Artifact Registry, which is in the same region as App Engine
+- id: docker-push-current-image-to-artifact-registry
+  waitFor: ['docker-build-current-image']
+  name: gcr.io/cloud-builders/docker
+  entrypoint: bash
+  args:
+    - -c
+    - |
+      docker push us-east1-docker.pkg.dev/$PROJECT_ID/metabase/metabase:$SHORT_SHA &&
+      docker push us-east1-docker.pkg.dev/$PROJECT_ID/metabase/metabase:latest
+
+# Clean up inactive app instances to avoid hitting App Engine versions quota
+- id: teardown-inactive-app-instances
+  waitFor: [] # start immediately
+  name: gcr.io/cloud-builders/gcloud
+  entrypoint: bash
+  args:
+    - -c
+    - |
+      gcloud app versions list --service metabase \
+        | grep '\b0\.00\b' \
+        | awk '{print $2}' \
+        | tr '\n' ' ' \
+        | xargs -i --no-run-if-empty sh -c \
+          "gcloud app versions delete --service metabase --quiet {} || true"
+
+# Deployment can happen as soon as the image is pushed to artifact registry
+- id: gcloud-app-deploy
+  waitFor: ['teardown-inactive-app-instances', 'docker-push-current-image-to-artifact-registry']
+  name: gcr.io/cloud-builders/gcloud
+  entrypoint: bash
+  args:
+    - -c
+    - |
+      gcloud app deploy --version="v-$SHORT_SHA" \
+        --image-url=us-east1-docker.pkg.dev/$PROJECT_ID/metabase/metabase:$SHORT_SHA
