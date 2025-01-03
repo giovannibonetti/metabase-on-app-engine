@@ -1,7 +1,7 @@
 # based on https://github.com/nownabe/metabase-gae
 # Java 11 required to fix https://github.com/metabase/metabase/issues/12549
-FROM openjdk:11
-ADD http://downloads.metabase.com/v0.44.1/metabase.jar /metabase.jar
+FROM openjdk:19-buster
+ADD https://downloads.metabase.com/v0.50.33/metabase.jar /metabase.jar
 
 # Add cloud sql proxy to connect to the database
 ADD https://dl.google.com/cloudsql/cloud_sql_proxy.linux.amd64 ./cloud_sql_proxy
